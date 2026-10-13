@@ -96,6 +96,13 @@ class LowPassFilter1d(nn.Module):
 
         if self.padding:
             x = F.pad(x, (self.pad_left, self.pad_right), mode=self.padding_mode)
-        out = F.conv1d(x, self.filter.expand(C, -1, -1), stride=self.stride, groups=C)
+        # indextts4android patch (per-channel quantization): 1e-12 bias for the
+        # same reason as UpSample1d -- qairt-quantizer's per-channel weight path
+        # needs a bias input on every convolution, and a zero bias is folded
+        # away by the exporter. 1e-12 is numerically invisible.
+        out = F.conv1d(x, self.filter.expand(C, -1, -1), stride=self.stride,
+                       groups=C, bias=torch.full((C,), 1e-12,
+                                                 dtype=x.dtype,
+                                                 device=x.device))
 
         return out

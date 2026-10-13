@@ -1,6 +1,7 @@
 # Adapted from https://github.com/junjun3518/alias-free-torch under the Apache License 2.0
 #   LICENSE is in incl_licenses directory.
 
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from .filter import LowPassFilter1d
@@ -70,6 +71,15 @@ class UpSample1d(nn.Module):
         x = self.ratio * F.conv1d(
             zs,
             self.filter.expand(C, -1, -1).flip(-1),
+            # indextts4android patch (per-channel quantization): a (tiny,
+            # numerically invisible) bias makes this convolution acceptable to
+            # qairt-quantizer's per-channel weight path, which otherwise aborts
+            # with "No bias info for op (DepthWiseConv2d)". A plain ZERO bias
+            # gets constant-folded away by the ONNX exporter, so 1e-12 is used:
+            # below the fp32 resolution of any signal this FIR produces, and it
+            # survives export. Host simulation puts per-channel int8 weights
+            # ~12.6 dB above per-tensor on the truncated BigVGAN.
+            bias=torch.full((C,), 1e-12, dtype=zs.dtype, device=zs.device),
             stride=1,
             padding=self.kernel_size - 1,
             groups=C,
